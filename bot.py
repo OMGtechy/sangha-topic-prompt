@@ -4,6 +4,33 @@ import discord
 import datetime
 import enum
 import os
+import sqlite3
+
+class PromptStore(object):
+    def __init__(self, logger):
+        self.logger = logger
+        self.logger.log(LogLevel.DEBUG, "Creating database")
+        self.connection = sqlite3.connect("prompt_store.sqlite3")
+        self.prompt_table_name = "table_prompts"
+        self.insert_datetime_field_name = "insert_datetime"
+
+        self.connection.execute(f"CREATE TABLE IF NOT EXISTS {self.prompt_table_name} (id INTEGER PRIMARY KEY AUTOINCREMENT, {self.insert_datetime_field_name} DATETIME, message TEXT, content TEXT, prompt TEXT)")
+
+    def get_timestamp(self):
+        return datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    def add(self, message, prompt):
+        self.logger.log(LogLevel.DEBUG, f"Adding prompt:\n{message}\n{prompt}")
+        cursor = self.connection.cursor()
+        print(message)
+        cursor.execute(f"INSERT INTO {self.prompt_table_name} VALUES (NULL, ?, ?, ?, ?)", [self.get_timestamp(), str(message), str(message.content), str(prompt)])
+        self.connection.commit()
+
+    def list(self, n):
+        self.logger.log(LogLevel.DEBUG, f"Listing {n} prompts")
+        cursor = self.connection.cursor()
+        cursor.execute(f"SELECT * FROM {self.prompt_table_name} ORDER BY {self.insert_datetime_field_name} DESC LIMIT {n}")
+        return cursor.fetchall()
 
 class LogLevel(enum.Enum):
     def __str__(self):
@@ -31,10 +58,39 @@ class Logger(object):
         print(f"{datetime.datetime.now()} | {level} | {message}")
 
 class SanghaBotClient(discord.Client):
-    def __init__(self, logger):
+    def __init__(self, logger, prompt_store):
         self.logger = logger
+        self.prompt_store = prompt_store
         self.prefix = "!stp"
+
+        self.command_handlers = {
+            "add": self.on_command_add,
+            "list": self.on_command_list
+        }
+
         super().__init__()
+
+    async def on_command_add(self, normalised_message, tokenised_content):
+        self.prompt_store.add(normalised_message, "test")
+
+    async def on_command_list(self, normalised_message, tokenised_content):
+        if len(tokenised_content) != 1:
+            return await self.handle_misunderstood_message(normalised_message, f"List expects 1 parameter")
+
+        n = int(tokenised_content[0])
+
+        min_messages = 1
+        max_messages = 20
+
+        if min_messages > n or max_messages < n:
+            return await self.handle_misunderstood_message(normalised_message, f"Can't list {n} messages (min = {min_messages}, max = {max_messages})")
+
+        prompts = self.prompt_store.list(n)
+
+        formatted_prompts = '\n'.join([f"{index + 1} | {prompt[-1]}" for index, prompt in enumerate(prompts)])
+        quoted_prompts = f"```\n{formatted_prompts}\n```"
+        prompts_with_header = f"Listing {n} prompts:\n{quoted_prompts}"
+        await normalised_message.channel.send(prompts_with_header)
 
     def is_from_self(self, message):
         return message.author == self.user
@@ -59,7 +115,14 @@ class SanghaBotClient(discord.Client):
         self.logger.log(LogLevel.INFO, f"Processing message content: {normalised_message.content}")
         tokenised_content = self.tokenise_message_content(normalised_message.content)
         if len(tokenised_content) < 1:
-           await self.handle_misunderstood_message(normalised_message, "No command specified")
+           return await self.handle_misunderstood_message(normalised_message, "No command specified")
+
+        command = tokenised_content[0]
+        if command in self.command_handlers:
+            self.logger.log(LogLevel.DEBUG, f"Command '{command}' received")
+            return await self.command_handlers[command](normalised_message, tokenised_content[1:])
+
+        return await self.handle_misunderstood_message(normalised_message, "Unknown command")
 
     async def on_ready(self):
         self.logger.log(LogLevel.INFO, "Bot ready to go!")
@@ -74,7 +137,10 @@ class SanghaBotClient(discord.Client):
 
 def start_bot(logger, discord_token):
     logger.log(LogLevel.DEBUG, f"Starting bot: __name__ == {__name__}")
-    client = SanghaBotClient(logger)
+
+    prompt_store = PromptStore(logger)
+
+    client = SanghaBotClient(logger, prompt_store) 
     client.run(discord_token)
 
 if __name__ == "__main__":
