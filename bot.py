@@ -22,7 +22,6 @@ class PromptStore(object):
     def add(self, message, prompt):
         self.logger.log(LogLevel.DEBUG, f"Adding prompt:\n{message}\n{prompt}")
         cursor = self.connection.cursor()
-        print(message)
         cursor.execute(f"INSERT INTO {self.prompt_table_name} VALUES (NULL, ?, ?, ?, ?)", [self.get_timestamp(), str(message), str(message.content), str(prompt)])
         self.connection.commit()
 
@@ -71,7 +70,11 @@ class SanghaBotClient(discord.Client):
         super().__init__()
 
     async def on_command_add(self, normalised_message, tokenised_content):
-        self.prompt_store.add(normalised_message, "test")
+        prompt = " ".join(tokenised_content)
+
+        self.prompt_store.add(normalised_message, prompt)
+
+        await normalised_message.channel.send(f"Added prompt: {prompt}")
 
     async def on_command_list(self, normalised_message, tokenised_content):
         if len(tokenised_content) != 1:
