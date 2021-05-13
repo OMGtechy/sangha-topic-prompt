@@ -76,7 +76,7 @@ if __name__ == "__main__":
     if discord_token:
         logger.log(LogLevel.DEBUG, "Discord token found!")
     else:
-        logger.log(LogLevel.DEBUG, "Discord token not found, bailing!")
+        logger.log(LogLevel.FATAL, "Discord token not found, bailing!")
         exit(-1)
 
     start_bot(logger, discord_token)
