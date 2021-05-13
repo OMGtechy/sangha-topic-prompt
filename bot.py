@@ -87,7 +87,10 @@ class SanghaBotClient(discord.Client):
         if len(tokenised_content) != 1:
             return await self.handle_misunderstood_message(normalised_message, f"Remove expects 1 parameter (the prompt ID, see list)")
 
-        id = int(tokenised_content[0])
+        try:
+            id = int(tokenised_content[0])
+        except:
+            return await self.handle_misunderstood_message(normalised_message, f"Couldn't convert {tokenised_content[0]} into ID")
 
         self.prompt_store.remove(id)
         await normalised_message.channel.send(f"Removed prompt with ID: {id}")
@@ -96,7 +99,10 @@ class SanghaBotClient(discord.Client):
         if len(tokenised_content) != 1:
             return await self.handle_misunderstood_message(normalised_message, f"List expects 1 parameter (the number of prompts to list)")
 
-        n = int(tokenised_content[0])
+        try:
+            n = int(tokenised_content[0])
+        except:
+            return await self.handle_misunderstood_message(normalised_message, f"Couldn't convert {tokenised_content[0]} into number")
 
         min_messages = 1
         max_messages = 20
