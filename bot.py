@@ -25,6 +25,12 @@ class PromptStore(object):
         cursor.execute(f"INSERT INTO {self.prompt_table_name} VALUES (NULL, ?, ?, ?, ?)", [self.get_timestamp(), str(message), str(message.content), str(prompt)])
         self.connection.commit()
 
+    def remove(self, id):
+        self.logger.log(LogLevel.DEBUG, f"Removing prompt ID: {id}")
+        cursor = self.connection.cursor()
+        cursor.execute(f"DELETE FROM {self.prompt_table_name} WHERE id = (?)", [id])
+        self.connection.commit()
+
     def list(self, n):
         self.logger.log(LogLevel.DEBUG, f"Listing {n} prompts")
         cursor = self.connection.cursor()
@@ -64,7 +70,8 @@ class SanghaBotClient(discord.Client):
 
         self.command_handlers = {
             "add": self.on_command_add,
-            "list": self.on_command_list
+            "list": self.on_command_list,
+            "remove": self.on_command_remove
         }
 
         super().__init__()
@@ -76,9 +83,18 @@ class SanghaBotClient(discord.Client):
 
         await normalised_message.channel.send(f"Added prompt: {prompt}")
 
+    async def on_command_remove(self, normalised_message, tokenised_content):
+        if len(tokenised_content) != 1:
+            return await self.handle_misunderstood_message(normalised_message, f"Remove expects 1 parameter (the prompt ID, see list)")
+
+        id = int(tokenised_content[0])
+
+        self.prompt_store.remove(id)
+        await normalised_message.channel.send(f"Removed prompt with ID: {id}")
+
     async def on_command_list(self, normalised_message, tokenised_content):
         if len(tokenised_content) != 1:
-            return await self.handle_misunderstood_message(normalised_message, f"List expects 1 parameter")
+            return await self.handle_misunderstood_message(normalised_message, f"List expects 1 parameter (the number of prompts to list)")
 
         n = int(tokenised_content[0])
 
@@ -90,7 +106,7 @@ class SanghaBotClient(discord.Client):
 
         prompts = self.prompt_store.list(n)
 
-        formatted_prompts = '\n'.join([f"{index + 1} | {prompt[-1]}" for index, prompt in enumerate(prompts)])
+        formatted_prompts = '\n'.join([f"ID: {prompt[0]}, prompt: {prompt[-1]}" for prompt in prompts])
         quoted_prompts = f"```\n{formatted_prompts}\n```"
         prompts_with_header = f"Listing {n} prompts:\n{quoted_prompts}"
         await normalised_message.channel.send(prompts_with_header)
