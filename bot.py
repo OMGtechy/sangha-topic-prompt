@@ -77,6 +77,9 @@ class SanghaBotClient(discord.Client):
         super().__init__()
 
     async def on_command_add(self, normalised_message, tokenised_content):
+        if len(tokenised_content) == 0:
+            return await self.handle_misunderstood_message(normalised_message, f"You didn't say what to add!")
+
         prompt = " ".join(tokenised_content)
 
         self.prompt_store.add(normalised_message, prompt)
