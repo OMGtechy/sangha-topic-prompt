@@ -47,9 +47,19 @@ class SanghaBotClient(discord.Client):
         message.content = message.content.lower().lstrip(self.prefix).strip()
         return message
 
+    def tokenise_message_content(self, content):
+        return content.split()
+
+    async def handle_misunderstood_message(self, message, reason):
+        self.logger.log(LogLevel.INFO, f"Couldn't handle message:\n{message}\n{message.content}\n{reason}")
+        await message.channel.send(f"Sorry, I didn't understand that!\n"
+                                 + f"Reason: {reason}")
+
     async def process_message(self, normalised_message):
         self.logger.log(LogLevel.INFO, f"Processing message content: {normalised_message.content}")
-        await normalised_message.channel.send(normalised_message.content)
+        tokenised_content = self.tokenise_message_content(normalised_message.content)
+        if len(tokenised_content) < 1:
+           await self.handle_misunderstood_message(normalised_message, "No command specified")
 
     async def on_ready(self):
         self.logger.log(LogLevel.INFO, "Bot ready to go!")
