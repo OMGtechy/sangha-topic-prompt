@@ -82,6 +82,7 @@ class Schedule(object):
     def __init__(self, next_due, frequency):
         self.next_due = next_due
         self.frequency = frequency
+        self.timer = None
 
     def __str__(self):
         return f"{self.next_due} | {self.frequency}"
@@ -150,6 +151,15 @@ class SanghaBotClient(discord.Client):
         if len(tokenised_content) == 0:
             return await normalised_message.channel.send(f"Current schedule: {self.schedule}")
 
+        if len(tokenised_content) == 1 and tokenised_content[0].lower() == "clear":
+            if self.schedule.timer != None:
+                self.schedule.timer.cancel()
+                self.logger.log(LogLevel.DEBUG, "Cancelled schedule timer")
+
+            self.schedule = None
+
+            return await normalised_message.channel.send(f"Schedule cleared")
+
         date_format_string = "%Y-%m-%d %H:%M:%S"
 
         if len(tokenised_content) >= 2:
@@ -174,9 +184,15 @@ class SanghaBotClient(discord.Client):
                 dateutil.relativedelta.relativedelta(seconds=frequency_seconds ,days=frequency_days, months=frequency_calendar_months)
             )
 
-            def timer_func(schedule, loop):
-                schedule.timer = threading.Timer(2.0, lambda: timer_func(schedule, loop))
-                schedule.timer.start()
+            def timer_func(loop):
+                if self.schedule == None:
+                    return
+
+                if self.schedule.timer != None:
+                    self.schedule.timer.cancel()
+
+                self.schedule.timer = threading.Timer(2.0, lambda: timer_func(loop))
+                self.schedule.timer.start()
                 if datetime.datetime.now() >= self.schedule.next_due:
                     prompt = self.prompt_store.pop()
                     if prompt == None:
@@ -190,7 +206,7 @@ class SanghaBotClient(discord.Client):
 
                     asyncio.run_coroutine_threadsafe(send(), loop)
 
-            timer_func(self.schedule, asyncio.get_event_loop())
+            timer_func(asyncio.get_event_loop())
 
             return await normalised_message.channel.send(f"New schedule: {self.schedule}")
 
