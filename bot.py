@@ -44,7 +44,7 @@ class PromptStore(object):
 
         id = result[0][0]
         self.remove(id)
-        return result
+        return result[0]
 
     def list(self, n):
         self.logger.log(LogLevel.DEBUG, f"Listing {n} prompts")
