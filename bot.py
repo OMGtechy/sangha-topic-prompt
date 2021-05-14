@@ -5,12 +5,15 @@ import datetime
 import enum
 import os
 import sqlite3
+import threading
+import dateutil.relativedelta
+import asyncio
 
 class PromptStore(object):
     def __init__(self, logger):
         self.logger = logger
         self.logger.log(LogLevel.DEBUG, "Creating database")
-        self.connection = sqlite3.connect("prompt_store.sqlite3")
+        self.connection = sqlite3.connect("prompt_store.sqlite3", check_same_thread = False)
         self.prompt_table_name = "table_prompts"
         self.insert_datetime_field_name = "insert_datetime"
 
@@ -30,6 +33,18 @@ class PromptStore(object):
         cursor = self.connection.cursor()
         cursor.execute(f"DELETE FROM {self.prompt_table_name} WHERE id = (?)", [id])
         self.connection.commit()
+
+    def pop(self):
+        self.logger.log(LogLevel.DEBUG, f"Popping prompt")
+        cursor = self.connection.cursor()
+        cursor.execute(f"SELECT * FROM {self.prompt_table_name} ORDER BY {self.insert_datetime_field_name} DESC LIMIT {1}")
+        result = cursor.fetchall()
+        if len(result) == 0:
+            return None
+
+        id = result[0][0]
+        self.remove(id)
+        return result
 
     def list(self, n):
         self.logger.log(LogLevel.DEBUG, f"Listing {n} prompts")
@@ -62,16 +77,27 @@ class Logger(object):
     def log(self, level, message):
         print(f"{datetime.datetime.now()} | {level} | {message}")
 
+
+class Schedule(object):
+    def __init__(self, next_due, frequency):
+        self.next_due = next_due
+        self.frequency = frequency
+
+    def __str__(self):
+        return f"{self.next_due} | {self.frequency}"
+
 class SanghaBotClient(discord.Client):
     def __init__(self, logger, prompt_store):
         self.logger = logger
         self.prompt_store = prompt_store
         self.prefix = "!stp"
+        self.schedule = None
 
         self.command_handlers = {
             "add": self.on_command_add,
             "list": self.on_command_list,
-            "remove": self.on_command_remove
+            "remove": self.on_command_remove,
+            "schedule": self.on_command_schedule
         }
 
         super().__init__()
@@ -119,6 +145,56 @@ class SanghaBotClient(discord.Client):
         quoted_prompts = f"```\n{formatted_prompts}\n```"
         prompts_with_header = f"Listing {n} prompts:\n{quoted_prompts}"
         await normalised_message.channel.send(prompts_with_header)
+
+    async def on_command_schedule(self, normalised_message, tokenised_content):
+        if len(tokenised_content) == 0:
+            return await normalised_message.channel.send(f"Current schedule: {self.schedule}")
+
+        date_format_string = "%Y-%m-%d %H:%M:%S"
+
+        if len(tokenised_content) >= 2:
+            frequency_tokens = tokenised_content[0].strip("[]").split(":")
+
+            try:
+                frequency_calendar_months = int(frequency_tokens[0])
+                frequency_days = int(frequency_tokens[1])
+                frequency_seconds = int(frequency_tokens[2])
+            except:
+                return await self.handle_misunderstood_message(normalised_message, "Couldn't understand frequency specification")
+
+            next_due_string = " ".join(tokenised_content[1:])
+
+            try:
+                next_due = datetime.datetime.strptime(next_due_string, date_format_string)
+            except:
+                return await self.handle_misunderstood_message(normalised_message, f"Couldn't understand next due date (expected UTC {date_format_string})")
+
+            self.schedule = Schedule(
+                next_due,
+                dateutil.relativedelta.relativedelta(seconds=frequency_seconds ,days=frequency_days, months=frequency_calendar_months)
+            )
+
+            def timer_func(schedule, loop):
+                schedule.timer = threading.Timer(2.0, lambda: timer_func(schedule, loop))
+                schedule.timer.start()
+                if datetime.datetime.now() >= self.schedule.next_due:
+                    prompt = self.prompt_store.pop()
+                    if prompt == None:
+                        prompt = "No prompts left!"
+                    else:
+                        prompt = prompt[-1]
+
+                    self.schedule.next_due += self.schedule.frequency
+                    async def send():
+                        await normalised_message.channel.send(f"{prompt}\nNext due: {self.schedule.next_due}")
+
+                    asyncio.run_coroutine_threadsafe(send(), loop)
+
+            timer_func(self.schedule, asyncio.get_event_loop())
+
+            return await normalised_message.channel.send(f"New schedule: {self.schedule}")
+
+        await self.handle_misunderstood_message(normalised_message, f"Expected frequency in format [calendar_months:days:seconds] followed by start date / time in format (UTC: {date_format_string})")
 
     def is_from_self(self, message):
         return message.author == self.user
