@@ -202,6 +202,9 @@ class SanghaBotClient(discord.Client):
     def is_message_for_us(self, message):
         return message.content.startswith(self.prefix)
 
+    def is_from_appropriate_user(self, message):
+        return "moderator" in [role.name.lower() for role in message.author.roles]
+
     def normalise_message(self, message):
         self.logger.log(LogLevel.DEBUG, f"Normalising message: {message}")
         message.content = message.content.lower().lstrip(self.prefix).strip()
@@ -233,7 +236,7 @@ class SanghaBotClient(discord.Client):
 
     async def on_message(self, message):
         self.logger.log(LogLevel.DEBUG, f"Got message: {message}")
-        if self.is_message_for_us(message):
+        if self.is_message_for_us(message) and self.is_from_appropriate_user(message):
             if self.is_from_self(message):
                 await message.channel.send("Nice try :wink:")
             else:
