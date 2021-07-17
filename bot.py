@@ -219,7 +219,7 @@ class SanghaBotClient(discord.Client):
         return message.content.startswith(self.prefix)
 
     def is_from_appropriate_user(self, message):
-        return "moderator" in [role.name.lower() for role in message.author.roles]
+        return "topic prompt" in [role.name.lower() for role in message.author.roles]
 
     def normalise_message(self, message):
         self.logger.log(LogLevel.DEBUG, f"Normalising message: {message}")
